@@ -8,8 +8,9 @@ The query language features are:
  * boat whale OR shark - must contain `boat` and either `whale` or `shark`
  * boat whale NOT shark - must contain both `boat` and `whale` and not contain `shark`
  * "floating boat" whale - must contain the phrase "floating boat" and the word `whale`
- * boat whale tag:book - must contain both `boat` and `whale` and the `tag` field must contain the word `book`
- * boat tag:book OR tag:"published leaflet" - must contain the word `boat` and either the `tag` field must have the word `book` or the phrase `published leaflet`
+ * boat whale tag:book - must contain both `boat` and `whale` and the `tag` field must contain `book`
+ * boat tag:book OR tag:"published leaflet" - must contain the word `boat` and the `tag` field must either have `book` or the phrase `published leaflet`
+ * boat OR NOT (tag:book OR tag:leaflet) - must contain 'boat' or the tag field must not contain 'book' or 'leaflet'
 
 Such queries are parsed using the QueryParser function, which returns a Query
 object.  Query objects are able to search any object that implements the
