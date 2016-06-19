@@ -19,6 +19,7 @@ Searchable interface.
 package search
 
 import (
+	// "log"
 	"strings"
 	"unicode"
 )
@@ -101,10 +102,11 @@ type Query interface {
 // filters implements the Query interface for the package
 type filters []filter
 
+// Filters default to AND - as soon as one term doesn't match, return false
 func (q filters) Search(s Searchable) (result bool) {
 	for _, filt := range q {
-		localResult := filt(s)
-		if !localResult {
+		if !filt(s) {
+			// log.Printf("Search of filter %v returned false\n", i)
 			return false
 		}
 	}
@@ -113,16 +115,20 @@ func (q filters) Search(s Searchable) (result bool) {
 
 // mustContain returns true if the Searchable matches the field and phrase
 func mustContain(field, phrase string) filter {
+	// log.Printf("Adding must contain %v:%v\n", field, phrase)
 	return func(s Searchable) bool {
 		if s.Contains(field, phrase) {
+			// log.Printf("Must contain %v:%v returns true\n", field, phrase)
 			return true
 		}
+		// log.Printf("Must contain %v:%v returns false\n", field, phrase)
 		return false
 	}
 }
 
 // mustContain returns true if the Searchable does not match the field and phrase
 func mustNotContain(field, phrase string) filter {
+	// log.Printf("Adding must NOT contain %v:%v\n", field, phrase)
 	return func(s Searchable) bool {
 		if s.Contains(field, phrase) {
 			return false
@@ -133,14 +139,39 @@ func mustNotContain(field, phrase string) filter {
 
 // orFilter tries each subfilter until one matches.  If none match it returns false
 func orFilter(subfilters ...filter) filter {
+	// log.Printf("Adding OR filter with %v\n", subfilters)
 	return func(s Searchable) bool {
 		for _, f := range subfilters {
 			if f(s) {
+				// log.Printf("orFilter %v returned true\n", i)
 				return true
 			}
 		}
 		return false
 	}
+}
+
+// notFilter runs each subfilter as AND and then inverts the result
+func notFilter(subfilters ...filter) filter {
+	// log.Printf("Adding NOT filter with %v\n", subfilters)
+	return func(s Searchable) bool {
+		for _, f := range subfilters {
+			// If the result is false, then the AND is false, so we return true
+			if !f(s) {
+				// log.Printf("notFilter %v returned false, returning true\n", i)
+				return true
+			}
+		}
+		// All results were true, so we return false
+		// log.Printf("All not filters returned true, returning false\n")
+		return false
+	}
+}
+
+type queryParserFrame struct {
+	filters   filters
+	orPhrase  bool
+	notPhrase bool
 }
 
 /*
@@ -150,12 +181,74 @@ func QueryParser(query string) (q Query) {
 	var phraseStart, phraseEnd int
 	var orPhrase, notPhrase, inquote bool
 
+	query = strings.TrimSpace(query)
+
 	results := make(filters, 0, 5)
+
+	stack := make([]queryParserFrame, 0, 2)
+
+	popStack := func() {
+		// Do nothing if there is nothing on the stack.
+		if len(stack) == 0 {
+			return
+		}
+		stackFrame := stack[len(stack)-1]
+		// log.Printf("Popping stack: %v\n", stackFrame)
+		stack = stack[:len(stack)-1]
+		// Stick the nested results into the previous frame
+		bracketResults := results
+		results = stackFrame.filters
+		orPhrase = stackFrame.orPhrase
+		notPhrase = stackFrame.notPhrase
+
+		// We have just closed brackets - now need to add the contents into the main results.
+		// To do this we need to know whether they are NOT or OR or default AND
+		if orPhrase {
+			// Try and build an OR with the previous phrase
+			if len(results) > 0 {
+				previousFilter := results[len(results)-1]
+				// Is this a compound OR NOT search?
+				if notPhrase {
+					// log.Printf("Adding in the OR with NOT the bracketResults.Search %v\n", bracketResults)
+					results[len(results)-1] = orFilter(previousFilter, notFilter(bracketResults...))
+				} else {
+					// log.Printf("Adding in the OR with the bracketResults.Search %v\n", bracketResults)
+					results[len(results)-1] = orFilter(previousFilter, bracketResults.Search)
+				}
+			} else {
+				// Suppress the OR and search for it
+				// log.Printf("Suppressing OR and adding %v as AND\n", bracketResults)
+				results = append(results, bracketResults.Search)
+			}
+		} else if notPhrase {
+			// log.Printf("Adding bracket results %v as a NOT AND\n", bracketResults)
+			results = append(results, notFilter(bracketResults...))
+		} else {
+			// log.Printf("Adding bracket results %v as an AND\n", bracketResults)
+			results = append(results, bracketResults.Search)
+		}
+
+		orPhrase = false
+		notPhrase = false
+	}
+
+	pushStack := func() {
+		stackFrame := queryParserFrame{
+			filters:   results,
+			orPhrase:  orPhrase,
+			notPhrase: notPhrase,
+		}
+		// log.Printf("Pushing stack: %v\n", stackFrame)
+		stack = append(stack, stackFrame)
+		results = make(filters, 0, 5)
+		orPhrase = false
+		notPhrase = false
+	}
 
 	// Closure to handle any found search phrases
 	// The closure ensures that the same logic is used inside and outside of the loop
 	phraseHandler := func() {
-		if !(phraseStart == phraseEnd+1) {
+		if phraseStart < phraseEnd {
 			phraseValue := query[phraseStart : phraseEnd+1]
 			if phraseValue == "OR" {
 				// Treat the next phrase as an OR with the previous one
@@ -179,7 +272,12 @@ func QueryParser(query string) (q Query) {
 					// Try and build an OR with the previous phrase
 					if len(results) > 0 {
 						previousFilter := results[len(results)-1]
-						results[len(results)-1] = orFilter(previousFilter, mustContain(fieldName, fieldValue))
+						// Is this a compound OR NOT search?
+						if notPhrase {
+							results[len(results)-1] = orFilter(previousFilter, mustNotContain(fieldName, fieldValue))
+						} else {
+							results[len(results)-1] = orFilter(previousFilter, mustContain(fieldName, fieldValue))
+						}
 					} else {
 						// Suppress the OR and search for it
 						results = append(results, mustContain(fieldName, fieldValue))
@@ -210,6 +308,13 @@ func QueryParser(query string) (q Query) {
 			phraseStart++
 			if !inquote && (char == '"' || char == '\'') {
 				inquote = true
+			} else if !inquote && char == '(' {
+				pushStack()
+			} else if !inquote && char == ')' {
+				phraseEnd = pos - 1
+				phraseHandler()
+				phraseStart = pos + 1
+				popStack()
 			} else {
 				// We didn't consume a character, so keep where we are
 				phraseStart--
@@ -222,6 +327,11 @@ func QueryParser(query string) (q Query) {
 			} else if !inquote && (char == '"' || char == '\'') {
 				// Quote part way through the phrase, e.g. title:"A book"
 				inquote = true
+			} else if !inquote && char == ')' {
+				phraseEnd = pos - 1
+				phraseHandler()
+				phraseStart = pos + 1
+				popStack()
 			} else {
 				phraseEnd = pos
 			}
@@ -229,5 +339,12 @@ func QueryParser(query string) (q Query) {
 	}
 	// End of all phrases, spit it out.
 	phraseHandler()
+
+	// Close any still open brackets
+	for _ = range stack {
+		// log.Printf("Handling un-closed stack\n")
+		popStack()
+	}
+
 	return results
 }
