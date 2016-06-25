@@ -8,9 +8,8 @@ The query language features are:
  * boat whale OR shark - must contain `boat` and either `whale` or `shark`
  * boat whale NOT shark - must contain both `boat` and `whale` and not contain `shark`
  * "floating boat" whale - must contain the phrase "floating boat" and the word `whale`
- * boat whale tag:book - must contain both `boat` and `whale` and the `tag` field must contain `book`
- * boat tag:book OR tag:"published leaflet" - must contain the word `boat` and the `tag` field must either have `book` or the phrase `published leaflet`
- * boat OR NOT (tag:book OR tag:leaflet) - must contain 'boat' or the tag field must not contain 'book' or 'leaflet'
+ * boat whale tag:book - must contain both `boat` and `whale` and the `tag` field must contain the word `book`
+ * boat tag:book OR tag:"published leaflet" - must contain the word `boat` and either the `tag` field must have the word `book` or the phrase `published leaflet`
 
 Such queries are parsed using the QueryParser function, which returns a Query
 object.  Query objects are able to search any object that implements the
@@ -23,6 +22,7 @@ import (
 	// "log"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 /*
@@ -251,6 +251,7 @@ func QueryParser(query string) (q Query) {
 	phraseHandler := func() {
 		if phraseStart < phraseEnd {
 			phraseValue := query[phraseStart : phraseEnd+1]
+			// log.Printf("Handling phrase value %v\n", phraseValue)
 			if phraseValue == "OR" {
 				// Treat the next phrase as an OR with the previous one
 				orPhrase = true
@@ -295,10 +296,11 @@ func QueryParser(query string) (q Query) {
 	}
 
 	for pos, char := range query {
+		// log.Printf("Considering char %v in phrase at position %v\n", string(char), pos)
 		if unicode.IsSpace(char) {
 			if !inquote {
-				// End of a phrase, spit it out.
 				phraseHandler()
+				phraseStart = pos + utf8.RuneLen(char)
 				phraseStart = pos + 1
 			} else {
 				phraseEnd = pos
@@ -306,7 +308,8 @@ func QueryParser(query string) (q Query) {
 		} else if pos == phraseStart {
 			// Begining of a new phrase.
 			// Assume we are going to consume a character
-			phraseStart++
+			phraseStart += utf8.RuneLen(char)
+			// phraseStart++
 			if !inquote && (char == '"' || char == '\'') {
 				inquote = true
 			} else if !inquote && char == '(' {
@@ -318,9 +321,11 @@ func QueryParser(query string) (q Query) {
 				popStack()
 			} else {
 				// We didn't consume a character, so keep where we are
-				phraseStart--
+				phraseStart -= utf8.RuneLen(char)
+				// phraseStart--
 			}
-			phraseEnd = pos
+			phraseEnd = pos + utf8.RuneLen(char) - 1
+			// phraseEnd = pos
 		} else {
 			if inquote && (char == '"' || char == '\'') {
 				inquote = false
@@ -334,7 +339,8 @@ func QueryParser(query string) (q Query) {
 				phraseStart = pos + 1
 				popStack()
 			} else {
-				phraseEnd = pos
+				phraseEnd = pos + utf8.RuneLen(char) - 1
+				// phraseEnd = pos
 			}
 		}
 	}

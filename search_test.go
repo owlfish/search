@@ -31,12 +31,17 @@ func (tso *testSearchObject) Contains(field, phrase string) (present bool) {
 
 var testFieldMaterial = &testSearchObject{
 	Title: "Once upon a very merry time",
-	Body:  "A bettle battle fought in a bottle",
+	Body:  "A beetle battle fought in a bottle",
 }
 
 var testFieldMaterialWithSpecialChars = &testSearchObject{
 	Title: "Once upon a (very merry) time",
-	Body:  "A bettle OR battle NOT fought in a bottle",
+	Body:  "A beetle OR battle NOT fought in a bottle",
+}
+
+var testFieldMaterialWithEmoji = &testSearchObject{
+	Title: "Once upon a (very ☺️ merry) time",
+	Body:  "A beetle 🐜 OR battle NOT fought in a 🍾 bottle",
 }
 
 var testCases = []struct {
@@ -269,7 +274,7 @@ var testCases = []struct {
 	},
 	{
 		"testSpecialCharInQuotes",
-		"'bettle OR battle'",
+		"'beetle OR battle'",
 		true,
 		testFieldMaterialWithSpecialChars,
 	},
@@ -287,7 +292,7 @@ var testCases = []struct {
 	},
 	{
 		"testSpecialCharInQuotes",
-		"NOT 'bettle OR battle'",
+		"NOT 'beetle OR battle'",
 		false,
 		testFieldMaterialWithSpecialChars,
 	},
@@ -328,7 +333,7 @@ var testCases = []struct {
 		testFieldMaterial,
 	},
 	// Title: "Once upon a very merry time",
-	// Body:  "A bettle battle fought in a bottle",
+	// Body:  "A beetle battle fought in a bottle",
 	{
 		"testNotMultiFieldOrSequenceNoMatch1",
 		"merry NOT body:'in a bottle' OR NOT body:'battle fought'",
@@ -419,9 +424,44 @@ var testCases = []struct {
 		false,
 		testFieldMaterial,
 	},
+	{
+		"emojiSearchMatch",
+		"🐜",
+		true,
+		testFieldMaterialWithEmoji,
+	},
+	{
+		"emojiSearchMatchMulitple",
+		"beetle 🐜 battle",
+		true,
+		testFieldMaterialWithEmoji,
+	},
+	{
+		"emojiSearchMatchOr",
+		"beetle 🍞 OR 🐜 battle",
+		true,
+		testFieldMaterialWithEmoji,
+	},
+	{
+		"emojiSearchMatchNot",
+		"beetle NOT 🍞 battle 🐜",
+		true,
+		testFieldMaterialWithEmoji,
+	},
+	{
+		"emojiSearchNoMatch",
+		"beetle 🍞 battle 🐜",
+		false,
+		testFieldMaterialWithEmoji,
+	},
 }
 
-func TestSearch(t *testing.T) {
+// var testFieldMaterialWithEmoji = &testSearchObject{
+// 	Title: "Once upon a (very ☺️ merry) time",
+// 	Body:  "A beetle 🐜 OR battle NOT fought in a 🍾 bottle",
+// }
+
+func TestSearchTestCases(t *testing.T) {
 	for _, test := range testCases {
 		query := QueryParser(test.Condition)
 		result := query.Search(test.Records)
