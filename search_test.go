@@ -44,6 +44,23 @@ var testFieldMaterialWithEmoji = &testSearchObject{
 	Body:  "A beetle 🐜 OR battle NOT fought in a 🍾 bottle",
 }
 
+type TestNote struct {
+	Body  string
+	Label string
+}
+
+func (td *TestNote) Contains(field, phrase string) (present bool) {
+	switch field {
+	case "label":
+		return strings.Contains(td.Label, phrase)
+	default:
+		if strings.Contains(td.Label, phrase) {
+			return true
+		}
+		return strings.Contains(td.Body, phrase)
+	}
+}
+
 var testCases = []struct {
 	Name      string
 	Condition string
@@ -326,6 +343,20 @@ var testCases = []struct {
 		false,
 		testFieldMaterial,
 	},
+	// Curly quote tests
+	{
+		"testCurlyQuoteOrNotSequenceMatch",
+		"frog OR NOT body:“battle not fought”",
+		true,
+		testFieldMaterial,
+	},
+	{
+		"testCurlyQuoteNotOrSequenceNoMatch",
+		"frog NOT OR body:“battle fought”",
+		false,
+		testFieldMaterial,
+	},
+	// Curly quote tests done
 	{
 		"testNotOrSequenceMatch",
 		"frog OR NOT body:'battle not fought'",
@@ -469,6 +500,22 @@ func TestSearchTestCases(t *testing.T) {
 			t.Errorf("%v failed, expected %v, got %v for search condition %v\n", test.Name, test.Result, result, test.Condition)
 		}
 	}
+}
+
+func TestManualComposition(t *testing.T) {
+	query := filters{
+		orFilter(
+			mustContain("", "demo notes"),
+			mustContain("", "demo instructions"),
+		),
+		mustNotContain("label", "Test"),
+	}
+
+	tn := &TestNote{Body: "demo notes", Label: "Instructions"}
+	if !query.Search(tn) {
+		t.Errorf("Manual search composition did not work\n")
+	}
+
 }
 
 func TestSearchableString(t *testing.T) {

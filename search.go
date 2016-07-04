@@ -265,8 +265,15 @@ func QueryParser(query string) (q Query) {
 					fieldName = phraseValue[:fieldBreak]
 					fieldValue = phraseValue[fieldBreak+1:]
 					// Remove any stray quotes, handles the form title:"A book"
-					fieldValue = strings.Replace(fieldValue, "'", "", -1)
-					fieldValue = strings.Replace(fieldValue, "\"", "", -1)
+					// fieldValue = strings.Replace(fieldValue, "'", "", -1)
+					// fieldValue = strings.Replace(fieldValue, "\"", "", -1)
+					// Use unicode categorisation to handle non-ASCII quote characters
+					fieldValue = strings.Map(func(runechar rune) rune {
+						if unicode.Is(unicode.Quotation_Mark, runechar) {
+							return -1
+						}
+						return runechar
+					}, fieldValue)
 				} else {
 					fieldValue = phraseValue
 				}
@@ -296,7 +303,6 @@ func QueryParser(query string) (q Query) {
 	}
 
 	for pos, char := range query {
-		// log.Printf("Considering char %v in phrase at position %v\n", string(char), pos)
 		if unicode.IsSpace(char) {
 			if !inquote {
 				phraseHandler()
@@ -310,7 +316,8 @@ func QueryParser(query string) (q Query) {
 			// Assume we are going to consume a character
 			phraseStart += utf8.RuneLen(char)
 			// phraseStart++
-			if !inquote && (char == '"' || char == '\'') {
+			// if !inquote && (char == '"' || char == '\'') {
+			if !inquote && unicode.Is(unicode.Quotation_Mark, char) {
 				inquote = true
 			} else if !inquote && char == '(' {
 				pushStack()
@@ -322,15 +329,15 @@ func QueryParser(query string) (q Query) {
 			} else {
 				// We didn't consume a character, so keep where we are
 				phraseStart -= utf8.RuneLen(char)
-				// phraseStart--
 			}
 			phraseEnd = pos + utf8.RuneLen(char) - 1
-			// phraseEnd = pos
 		} else {
-			if inquote && (char == '"' || char == '\'') {
+			// if inquote && (char == '"' || char == '\'') {
+			if inquote && unicode.Is(unicode.Quotation_Mark, char) {
 				inquote = false
-				phraseEnd = pos - 1
-			} else if !inquote && (char == '"' || char == '\'') {
+				phraseEnd = pos - utf8.RuneLen(char)
+				// } else if !inquote && (char == '"' || char == '\'') {
+			} else if !inquote && unicode.Is(unicode.Quotation_Mark, char) {
 				// Quote part way through the phrase, e.g. title:"A book"
 				inquote = true
 			} else if !inquote && char == ')' {
