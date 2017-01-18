@@ -1,7 +1,8 @@
-package search
+package search_test
 
 import (
 	"fmt"
+	"github.com/owlfish/search"
 	"strings"
 )
 
@@ -24,7 +25,7 @@ func ExampleSearchable() {
 	text2 := &texts{Title: "Not written, Go for gold and nothing more", Type: "article"}
 	text3 := &texts{Title: "Going for gold and nothing more", Type: "book"}
 
-	query := QueryParser(`"Go for gold" type:book OR type:article`)
+	query := search.QueryParser(`"Go for gold" type:book OR type:article`)
 
 	fmt.Printf("text1 - match: %v\n", query.Search(text1))
 	fmt.Printf("text2 - match: %v\n", query.Search(text2))
